@@ -1,0 +1,50 @@
+// Dialog resources. Windows compiles this directly; on macOS it is converted to SWELL form by
+// WDL's swell_resgen.pl at build time (see CMakeLists.txt).
+#include "resource.h"
+
+#ifdef _WIN32
+#include <windows.h>
+#include <commctrl.h>
+#endif
+
+IDD_MAIN DIALOGEX 0, 0, 470, 262
+STYLE DS_SETFONT | DS_FIXEDSYS | DS_CONTROL | WS_CHILD
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "WING IP:", IDC_LBL_HOST, 6, 8, 30, 8
+    EDITTEXT        IDC_HOST, 38, 6, 74, 12, ES_AUTOHSCROLL
+    PUSHBUTTON      "Connect", IDC_CONNECT, 116, 5, 48, 14
+    PUSHBUTTON      "Find...", IDC_FIND, 168, 5, 36, 14
+    LTEXT           "Disconnected", IDC_STATUS, 210, 8, 254, 8
+
+    CONTROL         "Follow WING", IDC_MASTER, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 6, 25, 58, 10
+    CONTROL         "Mutes", IDC_GMUTE, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 68, 25, 36, 10
+    CONTROL         "Faders", IDC_GFADER, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 106, 25, 38, 10
+    CONTROL         "Live updates", IDC_SUBSCRIBE, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 162, 25, 56, 10
+    LTEXT           "Poll ms:", IDC_LBL_POLL, 222, 26, 28, 8
+    EDITTEXT        IDC_POLLMS, 250, 24, 30, 12, ES_AUTOHSCROLL | ES_NUMBER
+    CONTROL         "Log OSC", IDC_LOGOSC, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 288, 25, 40, 10
+    PUSHBUTTON      "Enable all", IDC_ENABLE_ALL, 338, 23, 42, 14
+    PUSHBUTTON      "Disable all", IDC_DISABLE_ALL, 382, 23, 42, 14
+    PUSHBUTTON      "Re-sync", IDC_RESYNC, 426, 23, 38, 14
+
+    CONTROL         "", IDC_LIST, "SysListView32", LVS_REPORT | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP, 6, 42, 458, 170
+
+    LTEXT           "New:", IDC_LBL_NEW, 6, 222, 18, 8
+    COMBOBOX        IDC_KIND, 26, 220, 58, 100, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_GROUP, 88, 220, 62, 200, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    EDITTEXT        IDC_NUM, 154, 220, 22, 12, ES_AUTOHSCROLL | ES_NUMBER
+    PUSHBUTTON      "Add sel. tracks from #", IDC_ADD, 180, 219, 84, 14
+    PUSHBUTTON      "Add sel. tracks by track #", IDC_ADD_BYNUM, 268, 219, 96, 14
+    PUSHBUTTON      "Retarget selected", IDC_RETARGET, 368, 219, 70, 14
+
+    LTEXT           "Selected:", IDC_LBL_SEL, 6, 244, 32, 8
+    PUSHBUTTON      "On/Off", IDC_TOG_EN, 40, 241, 34, 14
+    PUSHBUTTON      "Mute", IDC_TOG_MUTE, 76, 241, 30, 14
+    PUSHBUTTON      "Fader", IDC_TOG_FADER, 108, 241, 30, 14
+    LTEXT           "Offset dB:", IDC_LBL_OFS, 144, 244, 34, 8
+    EDITTEXT        IDC_OFFSET, 180, 242, 28, 12, ES_AUTOHSCROLL
+    PUSHBUTTON      "Set", IDC_SET_OFS, 210, 241, 24, 14
+    PUSHBUTTON      "Add strip FX", IDC_ADDFX, 240, 241, 54, 14
+    PUSHBUTTON      "Remove", IDC_REMOVE, 298, 241, 40, 14
+END

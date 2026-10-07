@@ -1,0 +1,10 @@
+build/
+build-*/
+out/
+.vs/
+.vscode/
+.idea/
+*.user
+.DS_Store
+__pycache__/
+.nodeterm/

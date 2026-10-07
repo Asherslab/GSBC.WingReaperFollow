@@ -1,0 +1,62 @@
+name: release
+
+# Push a tag like v1.2.0 (or v1.2.0-rc1 for a pre-release) to build, test and publish installers:
+#   git tag v1.2.0 && git push origin v1.2.0
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Write release notes
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cat > notes.md <<EOF
+          ## Install
+
+          **Quit REAPER first**, then:
+
+          - **Windows:** run \`WING-Follow-${VERSION}-Windows-Setup.exe\`. It installs for your user into \`%APPDATA%\\REAPER\\UserPlugins\` (no admin needed). For a portable REAPER, pick that install's \`UserPlugins\` folder on the folder page.
+          - **macOS:** open \`WING-Follow-${VERSION}-macOS.pkg\`. It installs for your user into \`~/Library/Application Support/REAPER/UserPlugins\`. The package is not notarized: if macOS blocks it, right-click it and choose **Open**, or allow it under *System Settings > Privacy & Security*.
+
+          Then start REAPER and open **Extensions > WING Follow > Show window**.
+
+          The bare \`.dll\` / \`.dylib\` files are attached too, for manual installs: copy one into \`UserPlugins\`. A downloaded \`.dylib\` may need \`xattr -d com.apple.quarantine <file>\`.
+
+          EOF
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          ls -la dist
+          PRERELEASE=""
+          case "$VERSION" in *-*) PRERELEASE="--prerelease" ;; esac
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" \
+            --title "WING Follow $VERSION" --notes-file notes.md --generate-notes $PRERELEASE

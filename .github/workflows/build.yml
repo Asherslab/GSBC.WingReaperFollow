@@ -1,0 +1,70 @@
+name: build
+
+# Builds, tests and packages both platforms. Runs on every branch push / PR, and is reused by
+# release.yml (which passes the version from the tag).
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: Version to stamp into the binaries and installers (e.g. 1.2.0)
+        type: string
+        required: true
+
+env:
+  VERSION: ${{ inputs.version || format('0.0.0-dev.{0}', github.run_number) }}
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -A x64 -DWF_VERSION=${{ env.VERSION }}
+      - name: Build
+        run: cmake --build build --config Release
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: Build installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            "/DAppVersion=${env:VERSION}" `
+            "/DDllPath=${{ github.workspace }}\build\Release\reaper_wingfollow.dll" `
+            "/O${{ github.workspace }}\dist" `
+            packaging\windows\wingfollow.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item build\Release\reaper_wingfollow.dll "dist\reaper_wingfollow-${env:VERSION}-windows-x64.dll"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wingfollow-windows
+          path: dist/*
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15 -DWF_VERSION=${{ env.VERSION }}
+      - name: Build
+        run: cmake --build build -j 4
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: Build installer
+        run: |
+          packaging/macos/build_pkg.sh build/reaper_wingfollow.dylib "$VERSION" dist
+          cp build/reaper_wingfollow.dylib "dist/reaper_wingfollow-$VERSION-macos-universal.dylib"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wingfollow-macos
+          path: dist/*
+          if-no-files-found: error

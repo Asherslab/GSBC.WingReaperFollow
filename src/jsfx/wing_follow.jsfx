@@ -1,0 +1,190 @@
+desc:WING Follow (mixer strip)
+//tags: utility
+// Optional mixer-strip view for one WING Follow mapping. Audio passes through untouched.
+// Right-click this FX in the mixer and enable "Show embedded UI" to see it in the strip.
+// Installed and kept up to date by the WING Follow extension (reaper_wingfollow), which does the
+// actual following. Without the extension this FX does nothing.
+
+slider1:kind=2<0,2,1{Strip,Input source,Output}>-Follow kind
+slider2:grp=7<0,13,1>-Group
+slider3:num=1<1,64,1>-Number
+slider4:en=1<0,1,1{Off,On}>-Follow enabled
+slider5:fmute=1<0,1,1{Off,On}>-Follow mute
+slider6:ffader=1<0,1,1{Off,On}>-Follow fader
+slider7:offset=0<-24,24,0.1>-Fader offset (dB)
+slider8:configured=0<0,1,1>-Configured by extension
+slider9:status=0<0,5,1>-Status (written by extension)
+slider10:resolved=0<0,999,1>-Followed strip (written by extension)
+
+in_pin:left
+in_pin:right
+out_pin:left
+out_pin:right
+
+options:no_meter
+
+@init
+// Keep these tables in the same order as SrcType / IoGroups() in src/wing/wing_model.cpp.
+function strip_label(t) ( t==0?"CH": t==1?"AUX": t==2?"BUS": t==3?"MAIN": t==4?"MTX": t==5?"DCA": "MGRP" );
+function strip_count(t) ( t==0?40: t==1?8: t==2?16: t==3?4: t==4?8: t==5?16: 8 );
+function io_key(g) ( g==0?"LCL": g==1?"AUX": g==2?"A": g==3?"B": g==4?"C": g==5?"SC": g==6?"USB":
+                     g==7?"CRD": g==8?"MOD": g==9?"PLAY": g==10?"REC": g==11?"AES": g==12?"USR": "OSC" );
+function io_inputs(g) ( g==0?8: g==1?8: g<=4?48: g==5?32: g==6?48: g<=8?64: g==9?4: g==10?0: g==11?2: g==12?24: 2 );
+function io_outputs(g) ( g==0?8: g==1?8: g<=4?48: g==5?32: g==6?48: g<=8?64: g==9?0: g==10?4: g==11?2: 0 );
+
+function notify(n) ( slider_automate(2 ^ (n - 1)); );
+
+function set_target(k, g, n) (
+  kind = k; grp = g; num = n; configured = 1;
+  notify(1); notify(2); notify(3); notify(8);
+);
+
+function target_label(dest) (
+  kind == 0 ? sprintf(dest, "%s %d", strip_label(grp), num) :
+  kind == 1 ? sprintf(dest, "IN %s.%d", io_key(grp), num) :
+              sprintf(dest, "OUT %s.%d", io_key(grp), num);
+);
+
+function status_text() (
+  status == 1 ? "following" : status == 2 ? "paused" : status == 3 ? "no console" :
+  status == 4 ? "not patched" : status == 5 ? "off" : "no extension";
+);
+
+function status_color() (
+  status == 1 ? gfx_set(0.20, 0.72, 0.35) : status == 2 ? gfx_set(0.85, 0.65, 0.15) :
+  status == 3 ? gfx_set(0.85, 0.25, 0.20) : status == 4 ? gfx_set(0.90, 0.45, 0.15) :
+  gfx_set(0.45, 0.45, 0.45);
+);
+
+// Second-level menu: pick the number within a group. Each group is a one-level submenu.
+function pick_strip() local(t, i, r, idx) (
+  #m = "";
+  t = 0;
+  loop(7,
+    sprintf(#t, ">%s|", strip_label(t)); strcat(#m, #t);
+    i = 1;
+    loop(strip_count(t),
+      sprintf(#t, "%s%s%s %d|", i == strip_count(t) ? "<" : "",
+              (kind == 0 && grp == t && num == i) ? "!" : "", strip_label(t), i);
+      strcat(#m, #t);
+      i += 1;
+    );
+    t += 1;
+  );
+  r = gfx_showmenu(#m);
+  r > 0 ? (
+    idx = 0; t = 0;
+    loop(7,
+      r > idx && r <= idx + strip_count(t) ? set_target(0, t, r - idx);
+      idx += strip_count(t); t += 1;
+    );
+  );
+);
+
+function pick_io(k) local(g, i, n, r, idx) (
+  #m = "";
+  g = 0;
+  loop(14,
+    n = k == 1 ? io_inputs(g) : io_outputs(g);
+    n > 0 ? (
+      sprintf(#t, ">%s|", io_key(g)); strcat(#m, #t);
+      i = 1;
+      loop(n,
+        sprintf(#t, "%s%s%s.%d|", i == n ? "<" : "",
+                (kind == k && grp == g && num == i) ? "!" : "", io_key(g), i);
+        strcat(#m, #t);
+        i += 1;
+      );
+    );
+    g += 1;
+  );
+  r = gfx_showmenu(#m);
+  r > 0 ? (
+    idx = 0; g = 0;
+    loop(14,
+      n = k == 1 ? io_inputs(g) : io_outputs(g);
+      r > idx && r <= idx + n ? set_target(k, g, r - idx);
+      idx += n; g += 1;
+    );
+  );
+);
+
+function main_menu() local(r) (
+  sprintf(#m, "%sFollow this mapping|%sFollow mute|%sFollow fader||Follow a strip (CH, DCA, BUS...)...|Follow an input source...|Follow an output (card/Dante...)...||Offset +1 dB|Offset -1 dB|Offset reset (now %.1f dB)",
+          en ? "!" : "", fmute ? "!" : "", ffader ? "!" : "", offset);
+  r = gfx_showmenu(#m);
+  r == 1 ? ( en = !en; notify(4); );
+  r == 2 ? ( fmute = !fmute; notify(5); );
+  r == 3 ? ( ffader = !ffader; notify(6); );
+  r == 4 ? pick_strip();
+  r == 5 ? pick_io(1);
+  r == 6 ? pick_io(2);
+  r == 7 ? ( offset = min(24, offset + 1); notify(7); );
+  r == 8 ? ( offset = max(-24, offset - 1); notify(7); );
+  r == 9 ? ( offset = 0; notify(7); );
+);
+
+function button(x, y, w, h, label, on) (
+  on ? gfx_set(0.25, 0.55, 0.85) : gfx_set(0.22, 0.22, 0.22);
+  gfx_rect(x, y, w, h);
+  gfx_set(on ? 1 : 0.6);
+  gfx_x = x; gfx_y = y;
+  gfx_drawstr(label, 1 | 4, x + w, y + h);
+  mouse_clicked && mouse_x >= x && mouse_x < x + w && mouse_y >= y && mouse_y < y + h;
+);
+
+last_cap = 0;
+
+@slider
+
+@sample
+// pass-through
+
+@gfx 240 90
+embedded = gfx_ext_flags & 1;
+
+// ---- draw ----
+mouse_clicked = (mouse_cap & 1) && !(last_cap & 1);
+right_clicked = (mouse_cap & 2) && !(last_cap & 2);
+last_cap = mouse_cap;
+
+fs = max(9, min(16, gfx_h / (embedded ? 3.2 : 5)));
+gfx_setfont(1, "Arial", fs);
+gfx_set(0.12, 0.12, 0.12); gfx_rect(0, 0, gfx_w, gfx_h);
+
+// status bar on the left edge
+status_color(); gfx_rect(0, 0, 4, gfx_h);
+
+pad = 6;
+row = fs + 4;
+target_label(#lbl);
+gfx_set(en ? 0.95 : 0.55);
+gfx_x = pad; gfx_y = 2;
+gfx_drawstr(#lbl, 0, gfx_w - 2, 2 + row);
+
+y = 2 + row;
+// For source/output mappings show which strip it currently lands on.
+kind != 0 && gfx_h >= row * 3 + 4 ? (
+  resolved > 0 ? sprintf(#r, "> %s %d", strip_label(floor(resolved / 100) - 1), resolved % 100)
+               : strcpy(#r, status_text());
+  gfx_set(0.7); gfx_x = pad; gfx_y = y;
+  gfx_drawstr(#r, 0, gfx_w - 2, y + row);
+  y += row;
+);
+
+bw = floor((gfx_w - pad - 2) / 3) - 2;
+bh = min(row + 2, gfx_h - y - 2);
+bh >= 8 ? (
+  button(pad, y, bw, bh, "ON", en) ? ( en = !en; notify(4); );
+  button(pad + bw + 2, y, bw, bh, "M", fmute) ? ( fmute = !fmute; notify(5); );
+  button(pad + 2 * (bw + 2), y, bw, bh, "F", ffader) ? ( ffader = !ffader; notify(6); );
+);
+
+// Clicking the label (or right-clicking anywhere) opens the menu.
+(mouse_clicked && mouse_y < 2 + row) || right_clicked ? main_menu();
+
+!embedded && gfx_h > y + bh + row ? (
+  gfx_set(0.6); gfx_x = pad; gfx_y = y + bh + 6;
+  sprintf(#s, "Status: %s   Offset: %+.1f dB", status_text(), offset);
+  gfx_drawstr(#s);
+);

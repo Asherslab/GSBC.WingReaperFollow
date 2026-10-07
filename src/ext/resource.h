@@ -1,0 +1,36 @@
+#pragma once
+
+#define IDD_MAIN 100
+
+#define IDC_HOST 1001
+#define IDC_CONNECT 1002
+#define IDC_FIND 1003
+#define IDC_STATUS 1004
+#define IDC_MASTER 1005
+#define IDC_GMUTE 1006
+#define IDC_GFADER 1007
+#define IDC_SUBSCRIBE 1008
+#define IDC_POLLMS 1009
+#define IDC_LOGOSC 1010
+#define IDC_LIST 1011
+#define IDC_KIND 1012
+#define IDC_GROUP 1013
+#define IDC_NUM 1014
+#define IDC_ADD 1015
+#define IDC_ADD_BYNUM 1016
+#define IDC_RETARGET 1017
+#define IDC_REMOVE 1018
+#define IDC_TOG_EN 1019
+#define IDC_TOG_MUTE 1020
+#define IDC_TOG_FADER 1021
+#define IDC_OFFSET 1022
+#define IDC_SET_OFS 1023
+#define IDC_ADDFX 1024
+#define IDC_ENABLE_ALL 1025
+#define IDC_DISABLE_ALL 1026
+#define IDC_RESYNC 1027
+#define IDC_LBL_HOST 1028
+#define IDC_LBL_POLL 1029
+#define IDC_LBL_NEW 1030
+#define IDC_LBL_OFS 1031
+#define IDC_LBL_SEL 1032
