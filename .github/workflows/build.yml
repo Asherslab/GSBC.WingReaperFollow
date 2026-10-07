@@ -21,7 +21,7 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Configure
         run: cmake -S . -B build -A x64 -DWF_VERSION=${{ env.VERSION }}
       - name: Build
@@ -41,7 +41,7 @@ jobs:
             packaging\windows\wingfollow.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item build\Release\reaper_wingfollow.dll "dist\reaper_wingfollow-${env:VERSION}-windows-x64.dll"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wingfollow-windows
           path: dist/*
@@ -50,7 +50,7 @@ jobs:
   macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Configure
         run: >
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
@@ -63,7 +63,7 @@ jobs:
         run: |
           packaging/macos/build_pkg.sh build/reaper_wingfollow.dylib "$VERSION" dist
           cp build/reaper_wingfollow.dylib "dist/reaper_wingfollow-$VERSION-macos-universal.dylib"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wingfollow-macos
           path: dist/*
