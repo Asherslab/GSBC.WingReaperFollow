@@ -143,15 +143,7 @@ void MenuHook(const char* menuidstr, HMENU menu, int flag) {
   }
 }
 
-bool g_firstTick = true;
-
-void OnTimer() {
-  if (g_firstTick) {
-    g_firstTick = false;
-    if (E().GetSettings().windowOpen) PanelShow(true);  // restore the docked window
-  }
-  E().OnTimer();
-}
+void OnTimer() { E().OnTimer(); }
 
 void BeginLoadProjectState(bool isUndo, project_config_extension_t*) {
   if (!isUndo) E().OnProjectLoad();
@@ -205,6 +197,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
   g_rec = rec;
   PanelSetInstance(hInstance);
   Engine::Get().onToggleStateChanged = RefreshToggles;
+  Engine::Get().onWindowStateWanted = [](bool open) { PanelShow(open); };
   Engine::Get().Init();
   Register();
   return 1;

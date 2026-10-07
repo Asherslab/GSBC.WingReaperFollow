@@ -21,8 +21,8 @@ struct Settings {
   bool subscribe = true;
   int pollMs = 500;
   bool logOsc = false;
-  FollowSwitches sw;         // master / mute / fader quick switches
-  bool windowOpen = false;
+  FollowSwitches sw;         // master / mute / fader quick switches (per project)
+  bool windowOpen = false;   // per project
   // Defaults for new mappings (dock "add" row and freshly inserted strip FX).
   BindKind addKind = BindKind::Output;
   std::string addGroup = "CRD";  // for Input/Output kinds
@@ -86,14 +86,21 @@ class Engine {
 
   // Called when toggle-able state changes so toolbar buttons can refresh.
   void (*onToggleStateChanged)() = nullptr;
+  // Called on project load/switch when the project remembers whether the window was open.
+  void (*onWindowStateWanted)(bool open) = nullptr;
 
  private:
   void LoadSettings();
   void SaveSettings();
   void PushClientConfig();
   void CheckProject();
-  void LoadBindings();
+  bool LoadBindings();  // from the tracks; returns true if anything changed
   void SaveBindings();
+  void MigrateLegacyBindings();
+  void LoadProjectSwitches(bool applyWindow);
+  int GetProjectValue(const char* key, int def);
+  void PutProjectValue(const char* key, bool on, bool markDirty);
+  void SwitchesChanged(bool turnedOn);
   void BindingsChanged(bool save);
   void UpdateInterest();
   void ApplyAll();
@@ -104,6 +111,8 @@ class Engine {
   std::unique_ptr<WingClient> client_;
   Settings settings_;
   ReaProject* project_ = nullptr;
+  std::string projectFile_;
+  int stateCount_ = 0;
   bool reloadRequested_ = true;
   std::vector<Binding> bindings_;
   uint32_t nextId_ = 1;

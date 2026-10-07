@@ -101,10 +101,6 @@ void Engine::LoadSettings() {
   settings_.subscribe = GetSettingBool("subscribe", true);
   settings_.pollMs = std::max(20, atoi(GetSetting("poll_ms", "500").c_str()));
   settings_.logOsc = false;  // never persist debug logging
-  settings_.sw.master = GetSettingBool("master", false);
-  settings_.sw.mute = GetSettingBool("follow_mute", true);
-  settings_.sw.fader = GetSettingBool("follow_fader", true);
-  settings_.windowOpen = GetSettingBool("window_open", false);
   int k = atoi(GetSetting("add_kind", "2").c_str());
   settings_.addKind = k == 0 ? BindKind::Strip : k == 1 ? BindKind::Input : BindKind::Output;
   settings_.addGroup = GetSetting("add_group", "CRD");
@@ -118,10 +114,6 @@ void Engine::SaveSettings() {
   PutSettingBool("connect", settings_.connect);
   PutSettingBool("subscribe", settings_.subscribe);
   PutSetting("poll_ms", std::to_string(settings_.pollMs));
-  PutSettingBool("master", settings_.sw.master);
-  PutSettingBool("follow_mute", settings_.sw.mute);
-  PutSettingBool("follow_fader", settings_.sw.fader);
-  PutSettingBool("window_open", settings_.windowOpen);
   PutSetting("add_kind", std::to_string(static_cast<int>(settings_.addKind)));
   PutSetting("add_group", settings_.addGroup);
   PutSetting("add_strip", GetSrcTypeInfo(settings_.addStripType).key);
@@ -160,25 +152,29 @@ void Engine::SetConnect(bool on) {
   Toggled();
 }
 
+void Engine::SwitchesChanged(bool turnedOn) {
+  if (turnedOn) applied_.clear();  // bring every followed track in line right away
+  applyNeeded_ = true;
+  valuesSerial_++;
+  if (onToggleStateChanged) onToggleStateChanged();
+}
+
 void Engine::SetMaster(bool on) {
   settings_.sw.master = on;
-  if (on) applied_.clear();  // bring every followed track in line right away
-  applyNeeded_ = true;
-  Toggled();
+  PutProjectValue("master", on, true);
+  SwitchesChanged(on);
 }
 
 void Engine::SetFollowMute(bool on) {
   settings_.sw.mute = on;
-  if (on) applied_.clear();
-  applyNeeded_ = true;
-  Toggled();
+  PutProjectValue("follow_mute", on, true);
+  SwitchesChanged(on);
 }
 
 void Engine::SetFollowFader(bool on) {
   settings_.sw.fader = on;
-  if (on) applied_.clear();
-  applyNeeded_ = true;
-  Toggled();
+  PutProjectValue("follow_fader", on, true);
+  SwitchesChanged(on);
 }
 
 void Engine::SetSubscribe(bool on) {
@@ -199,9 +195,10 @@ void Engine::SetLogOsc(bool on) {
 }
 
 void Engine::SetWindowOpen(bool open) {
-  if (settings_.windowOpen == open) return;
   settings_.windowOpen = open;
-  Toggled();
+  // Remembered with the project, but not worth a "save changes?" prompt on its own.
+  PutProjectValue("window_open", open, false);
+  if (onToggleStateChanged) onToggleStateChanged();
 }
 
 void Engine::SetAddDefaults(BindKind kind, const std::string& group, SrcType stripType) {
@@ -220,40 +217,167 @@ void Engine::Resync() {
 // ---- project / persistence ----------------------------------------------------------------------
 
 void Engine::CheckProject() {
-  ReaProject* cur = EnumProjects(-1, nullptr, 0);
-  if (cur == project_ && !reloadRequested_) return;
-  project_ = cur;
-  reloadRequested_ = false;
-  LoadBindings();
-  applied_.clear();
-  fxSeen_.clear();
-  BindingsChanged(false);
+  char file[4096] = "";
+  ReaProject* cur = EnumProjects(-1, file, sizeof(file));
+  if (cur != project_ || projectFile_ != file || reloadRequested_) {
+    // Another tab, another file, or a fresh project (e.g. from the default template).
+    project_ = cur;
+    projectFile_ = file;
+    reloadRequested_ = false;
+    applied_.clear();
+    fxSeen_.clear();
+    bindings_.clear();
+    MigrateLegacyBindings();
+    LoadBindings();
+    LoadProjectSwitches(true);
+    stateCount_ = project_ ? GetProjectStateChangeCount(project_) : 0;
+    BindingsChanged(false);
+    return;
+  }
+  // Undo/redo, track deletion, pasted or imported tracks: re-read what the tracks carry.
+  int sc = project_ ? GetProjectStateChangeCount(project_) : 0;
+  if (sc != stateCount_) {
+    stateCount_ = sc;
+    if (LoadBindings()) BindingsChanged(false);
+    LoadProjectSwitches(false);
+  }
 }
 
-void Engine::LoadBindings() {
-  bindings_.clear();
+int Engine::GetProjectValue(const char* key, int def) {
+  char buf[32] = "";
+  if (!project_ || GetProjExtState(project_, kSection, key, buf, sizeof(buf)) <= 0 || !buf[0]) return def;
+  return atoi(buf);
+}
+
+void Engine::PutProjectValue(const char* key, bool on, bool markDirty) {
   if (!project_) return;
-  char key[64], val[1024];
-  for (int i = 0; EnumProjExtState(project_, kSection, i, key, sizeof(key), val, sizeof(val)); i++) {
-    if (key[0] != 'b') continue;
-    Binding b;
-    b.id = nextId_;
-    if (ParseBinding(val, &b)) {
-      nextId_++;
-      bindings_.push_back(b);
+  SetProjExtState(project_, kSection, key, on ? "1" : "0");
+  if (markDirty) MarkProjectDirty(project_);
+}
+
+void Engine::LoadProjectSwitches(bool applyWindow) {
+  FollowSwitches sw;
+  sw.master = GetProjectValue("master", 0) != 0;
+  sw.mute = GetProjectValue("follow_mute", 1) != 0;
+  sw.fader = GetProjectValue("follow_fader", 1) != 0;
+  if (sw.master != settings_.sw.master || sw.mute != settings_.sw.mute || sw.fader != settings_.sw.fader) {
+    settings_.sw = sw;
+    SwitchesChanged(true);
+  }
+  if (applyWindow) {
+    int open = GetProjectValue("window_open", -1);  // -1: project never said, leave it as is
+    if (open >= 0 && onWindowStateWanted) onWindowStateWanted(open != 0);
+  }
+}
+
+namespace {
+
+const char* const kTrackExtKey = "P_EXT:WingFollow";
+
+std::string ReadTrackBindings(MediaTrack* tr) {
+  static char buf[65536];
+  buf[0] = 0;
+  if (!GetSetMediaTrackInfo_String(tr, kTrackExtKey, buf, false)) return "";
+  return buf;
+}
+
+std::string BindingsKey(const Binding& b) {
+  return b.trackGuid + "|" + b.target.Label() + "|" + b.fxGuid;
+}
+
+}  // namespace
+
+// Mappings live on the tracks themselves (P_EXT), so they travel with project templates, track
+// templates, copies and imports, and come back with undo.
+bool Engine::LoadBindings() {
+  std::map<std::string, uint32_t> oldIds;
+  for (const Binding& b : bindings_) oldIds[BindingsKey(b)] = b.id;
+
+  std::vector<Binding> loaded;
+  if (project_) {
+    int n = CountTracks(project_);
+    for (int i = 0; i < n; i++) {
+      MediaTrack* tr = GetTrack(project_, i);
+      std::string data = ReadTrackBindings(tr);
+      if (data.empty()) continue;
+      std::string guid = TrackGuid(tr);
+      size_t start = 0;
+      while (start <= data.size()) {
+        size_t end = data.find(';', start);
+        if (end == std::string::npos) end = data.size();
+        Binding b;
+        if (ParseBinding(data.substr(start, end - start), &b)) {
+          b.trackGuid = guid;  // the stored GUID may be stale (template, copied track)
+          auto it = oldIds.find(BindingsKey(b));
+          b.id = it != oldIds.end() ? it->second : nextId_++;
+          loaded.push_back(b);
+        }
+        start = end + 1;
+      }
     }
   }
+
+  bool same = loaded.size() == bindings_.size();
+  for (size_t i = 0; same && i < loaded.size(); i++) {
+    same = loaded[i].id == bindings_[i].id && SerializeBinding(loaded[i]) == SerializeBinding(bindings_[i]);
+  }
+  if (same) return false;
+  bindings_.swap(loaded);
+  return true;
 }
 
 void Engine::SaveBindings() {
   if (!project_) return;
-  SetProjExtState(project_, kSection, "", "");  // clears the section
-  char key[32];
-  for (size_t i = 0; i < bindings_.size(); i++) {
-    snprintf(key, sizeof(key), "b%04d", static_cast<int>(i));
-    SetProjExtState(project_, kSection, key, SerializeBinding(bindings_[i]).c_str());
+  std::map<std::string, std::string> perTrack;
+  for (const Binding& b : bindings_) {
+    std::string& v = perTrack[b.trackGuid];
+    if (!v.empty()) v += ";";
+    v += SerializeBinding(b);
   }
+  std::vector<std::pair<MediaTrack*, std::string>> writes;
+  int n = CountTracks(project_);
+  for (int i = 0; i < n; i++) {
+    MediaTrack* tr = GetTrack(project_, i);
+    auto it = perTrack.find(TrackGuid(tr));
+    std::string want = it != perTrack.end() ? it->second : "";
+    if (ReadTrackBindings(tr) != want) writes.emplace_back(tr, want);
+  }
+  if (writes.empty()) return;
+  // Its own undo step: otherwise undoing something unrelated later would restore an older copy of
+  // the track and silently drop this change.
+  Undo_BeginBlock2(project_);
+  for (auto& w : writes) GetSetMediaTrackInfo_String(w.first, kTrackExtKey, const_cast<char*>(w.second.c_str()), true);
+  Undo_EndBlock2(project_, "WING Follow: change mappings", UNDO_STATE_TRACKCFG);
   MarkProjectDirty(project_);
+  stateCount_ = GetProjectStateChangeCount(project_);  // our own write, nothing to reload
+}
+
+// Projects saved by 0.1.x kept mappings in project ext state keyed by track GUID: move them onto
+// their tracks.
+void Engine::MigrateLegacyBindings() {
+  if (!project_) return;
+  std::vector<std::string> keys;
+  std::vector<Binding> legacy;
+  char key[64], val[1024];
+  for (int i = 0; EnumProjExtState(project_, kSection, i, key, sizeof(key), val, sizeof(val)); i++) {
+    if (key[0] != 'b') continue;
+    keys.push_back(key);
+    Binding b;
+    if (ParseBinding(val, &b)) legacy.push_back(b);
+  }
+  if (keys.empty()) return;
+  for (const std::string& k : keys) SetProjExtState(project_, kSection, k.c_str(), "");
+  LoadBindings();  // anything already on tracks
+  for (Binding& b : legacy) {
+    if (!FindTrack(b.trackGuid)) continue;
+    bool dupe = false;
+    for (const Binding& x : bindings_) dupe |= x.trackGuid == b.trackGuid && x.target == b.target;
+    if (dupe) continue;
+    b.id = nextId_++;
+    bindings_.push_back(b);
+  }
+  SaveBindings();
+  LogLine("WING Follow: moved this project's mappings onto its tracks (save the project to keep this).");
 }
 
 void Engine::BindingsChanged(bool save) {
@@ -549,11 +673,45 @@ void Engine::SyncStripFx() {
   std::set<std::string> present;
   std::set<std::string> tracksPresent;
   int nt = CountTracks(project_);
+
+  // Where each strip FX lives. A copied track carries its mappings (with the original FX's GUID)
+  // while the original FX still exists elsewhere: unlink such stale copies so they re-link to
+  // their own track's FX below instead of being mistaken for an FX that moved.
+  std::map<std::string, std::string> fxTrack;
+  for (int ti = 0; ti < nt; ti++) {
+    MediaTrack* tr = GetTrack(project_, ti);
+    std::string tg = TrackGuid(tr);
+    int nfx = TrackFX_GetCount(tr);
+    for (int fx = 0; fx < nfx; fx++) {
+      if (!IsStripFx(tr, fx)) continue;
+      char g[64] = "";
+      guidToString(TrackFX_GetFXGUID(tr, fx), g);
+      fxTrack[g] = tg;
+    }
+  }
+  for (Binding& b : bindings_) {
+    auto it = fxTrack.find(b.fxGuid);
+    if (b.fxGuid.empty() || it == fxTrack.end() || it->second == b.trackGuid) continue;
+    for (const Binding& x : bindings_) {
+      if (&x != &b && x.fxGuid == b.fxGuid && x.trackGuid == it->second) {
+        b.fxGuid.clear();
+        changed = true;
+        break;
+      }
+    }
+  }
+
   for (int ti = 0; ti < nt; ti++) {
     MediaTrack* tr = GetTrack(project_, ti);
     std::string trackGuid = TrackGuid(tr);
     tracksPresent.insert(trackGuid);
     int nfx = TrackFX_GetCount(tr);
+    std::set<std::string> fxOnTrack;
+    for (int fx = 0; fx < nfx; fx++) {
+      char g[64] = "";
+      guidToString(TrackFX_GetFXGUID(tr, fx), g);
+      fxOnTrack.insert(g);
+    }
     for (int fx = 0; fx < nfx; fx++) {
       if (!IsStripFx(tr, fx)) continue;
       char fxGuid[64] = "";
@@ -568,7 +726,7 @@ void Engine::SyncStripFx() {
 
       Binding* b = nullptr;
       for (Binding& x : bindings_) {
-        if (x.fxGuid == fxGuid) b = &x;
+        if (x.fxGuid == fxGuid && (!b || x.trackGuid == trackGuid)) b = &x;
       }
 
       if (!b) {
@@ -592,6 +750,22 @@ void Engine::SyncStripFx() {
           writeParams(tr, fx, cur);
         } else if (!applyParams(cur, &nb)) {
           continue;
+        } else {
+          // A copied track (or a new project from a template) brings its mappings along, but the
+          // FX gets a new GUID: re-link to the matching mapping instead of adding a duplicate.
+          Binding* same = nullptr;
+          for (Binding& x : bindings_) {
+            if (x.trackGuid == trackGuid && x.target == nb.target &&
+                (x.fxGuid.empty() || !fxOnTrack.count(x.fxGuid))) {
+              same = &x;
+            }
+          }
+          if (same) {
+            same->fxGuid = fxGuid;
+            fxSeen_[fxGuid] = cur;
+            changed = true;
+            continue;
+          }
         }
         nb.id = nextId_++;
         bindings_.push_back(nb);

@@ -79,8 +79,21 @@ Turning on the master switch, reconnecting, or pressing *Re-sync* re-asserts eve
 5. Optionally click **Add strip FX** for the selected mappings to get the mixer-strip view.
 6. Tick **Follow WING**, or bind *WING Follow: Toggle following the WING* to a toolbar button.
 
-Mappings are saved in the project (keyed by track GUID, so reordering or renaming tracks is
-fine). Connection settings and the global switches are saved globally.
+**What is saved where**
+
+| Saved with | What | Notes |
+|---|---|---|
+| **Each track** | its mappings (target, On/M/F, offset, strip-FX link) | Travels with the track: project and track templates, copy/duplicate, import; comes back on undo. |
+| **The project** | *Follow WING*, *Mutes*, *Faders*; whether the window is open | Toggling a switch marks the project as changed. Opening/closing the window doesn't, but it is stored on the next save. |
+| **REAPER (global)** | WING IP, connected, *Live updates*, *Poll ms*, the "New" row defaults | Same for every project. *Log OSC* is never saved. |
+
+**Using a project template** (e.g. REAPER's default template on startup): set up the template
+project with your mappings, the switches as you want them on a normal week (for example
+*Follow WING* on) and the window open, then save it as the template. Every new project made from it
+starts that way. A project saved without the window state leaves the window as it is.
+
+Projects saved with 0.1.0/0.1.1 kept mappings in the project instead. They are moved onto the
+tracks automatically the first time the project is opened (save it afterwards).
 
 ## Network notes
 
@@ -182,6 +195,6 @@ packaging/     Windows installer (Inno Setup) and macOS .pkg scripts
   undoing *Add strip FX* doesn't lose the mapping). Status is not written to the FX while its
   track is in touch/latch/write mode, so it never records automation.
 - Inspired by an earlier X32 attempt (`Asherslab/x32-reaper-mirror`, plan only). Carried over:
-  one-way guarantee, GUID-keyed per-project mappings, master switch plus enable/disable-all, and
+  one-way guarantee, per-project mappings, master switch plus enable/disable-all, and
   control-surface-style apply. New here: WING protocol, source/output-based following,
   console-style combining, and a JSFX (instead of a VST2) for the in-strip UI.

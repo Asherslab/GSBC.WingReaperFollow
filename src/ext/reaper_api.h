@@ -27,6 +27,7 @@
 #define REAPERAPI_WANT_GetMainHwnd
 #define REAPERAPI_WANT_GetMediaTrackInfo_Value
 #define REAPERAPI_WANT_GetProjExtState
+#define REAPERAPI_WANT_GetProjectStateChangeCount
 #define REAPERAPI_WANT_GetResourcePath
 #define REAPERAPI_WANT_GetSelectedTrack
 #define REAPERAPI_WANT_GetSetMediaTrackInfo_String
