@@ -129,17 +129,12 @@ cmake --build build --config Release --target install_to_reaper   # copies into 
 Cross-compiling the Windows DLL on a Mac (for quick checks; releases use MSVC in CI):
 `brew install mingw-w64`, then configure with `-DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64-x86_64.cmake`.
 
-GitHub Actions (`.github/workflows/build.yml`) builds Windows x64 (MSVC) and macOS universal on
-every push, runs the tests, and uploads the installers and binaries as workflow artifacts.
-
-**Releasing:** push a version tag. `release.yml` builds and tests with that version stamped in,
-then publishes a GitHub Release with the Windows installer (Inno Setup, `packaging/windows/`), the
-macOS `.pkg` (`packaging/macos/build_pkg.sh`) and the bare binaries. A tag with a suffix
-(`v1.2.0-rc1`) becomes a pre-release.
-
-```sh
-git tag v0.1.0 && git push origin v0.1.0
-```
+**CI and releases:** every push to `main` builds Windows x64 (MSVC) and macOS universal, runs the
+tests, and publishes a GitHub Release (`.github/workflows/release.yml`) with the Windows installer
+(Inno Setup, `packaging/windows/`), the macOS `.pkg` (`packaging/macos/build_pkg.sh`) and the bare
+binaries. The version is MAJOR.MINOR from `project(... VERSION x.y.z)` in `CMakeLists.txt`, plus a
+patch number that counts up from the last release (0.1.0, 0.1.1, ...). Edit that line to move to
+0.2. Pushes to other branches and pull requests only build and test (`build.yml`).
 
 ## Testing without the console
 

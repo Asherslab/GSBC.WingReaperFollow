@@ -1,10 +1,10 @@
 name: build
 
-# Builds, tests and packages both platforms. Runs on every branch push / PR, and is reused by
-# release.yml (which passes the version from the tag).
+# Builds, tests and packages both platforms. Runs on pushes to other branches and on PRs; for main,
+# release.yml calls it (with the release version) and then publishes.
 on:
   push:
-    branches: ['**']
+    branches-ignore: [main]
   pull_request:
   workflow_dispatch:
   workflow_call:

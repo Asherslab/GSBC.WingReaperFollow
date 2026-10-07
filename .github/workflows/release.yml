@@ -1,13 +1,20 @@
 name: release
 
-# Push a tag like v1.2.0 (or v1.2.0-rc1 for a pre-release) to build, test and publish installers:
-#   git tag v1.2.0 && git push origin v1.2.0
+# Every push to main builds, tests and publishes a GitHub Release with ready-to-install files.
+# Version: MAJOR.MINOR from project(... VERSION x.y.z) in CMakeLists.txt; PATCH counts up from the
+# last released v<MAJOR>.<MINOR>.N tag. Bump MAJOR/MINOR by editing CMakeLists.txt.
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
+
+# One release at a time, in push order, so two quick pushes never claim the same version.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   version:
@@ -15,8 +22,17 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # need tags
       - id: v
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          BASE=$(sed -nE 's/^project\(WingReaperFollow VERSION ([0-9]+)\.([0-9]+)\.[0-9]+.*/\1.\2/p' CMakeLists.txt)
+          [ -n "$BASE" ] || { echo "could not read the version from CMakeLists.txt"; exit 1; }
+          LAST=$(git tag -l "v$BASE.*" | grep -E "^v${BASE//./\\.}\.[0-9]+$" | sort -V | tail -1 || true)
+          if [ -z "$LAST" ]; then PATCH=0; else PATCH=$(( ${LAST##*.} + 1 )); fi
+          echo "version=$BASE.$PATCH" >> "$GITHUB_OUTPUT"
+          echo "Releasing $BASE.$PATCH (previous: ${LAST:-none})"
 
   build:
     needs: version
@@ -49,14 +65,11 @@ jobs:
           The bare \`.dll\` / \`.dylib\` files are attached too, for manual installs: copy one into \`UserPlugins\`. A downloaded \`.dylib\` may need \`xattr -d com.apple.quarantine <file>\`.
 
           EOF
-      - name: Create release
+      - name: Create release (and tag)
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           ls -la dist
-          PRERELEASE=""
-          case "$VERSION" in *-*) PRERELEASE="--prerelease" ;; esac
-          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" \
-            --title "WING Follow $VERSION" --notes-file notes.md --generate-notes $PRERELEASE
+          gh release create "v$VERSION" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "WING Follow $VERSION" --notes-file notes.md --generate-notes --latest
